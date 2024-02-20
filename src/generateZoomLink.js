@@ -1,63 +1,64 @@
 // With Node js
 // Generate Token
-require("dotenv").config();
-const express = require("express");
-const router = express.Router();
-const axios = require("axios");
-
-
-router.get('/accessToken',async (req,res)=>{
-    const code = req.query.code;
-
-    console.log({code})
-
-    try{
-        const response = await axios.post('https://zoom.us/oauth/token',null,{
-            params:{
-                grant_type: 'authorization_code',
-                code:code,
-                redirect_uri: "http://localhost:5005/meeting/accessToken/"
-            },
-            headers:{
-                'Authorization':`Basic ${Buffer.from(`${process.env.ZOOM_API_KEY}:${process.env.ZOOM_API_SECRET}`).toString('base64')}`
-            }
-        });
-        res.send(response.data.access_token);    
-    }catch(error){
-        console.error('Error',error);
-        res.send('Error');
-    } 
-});
-
-module.exports = router
-
-
-// How to Access on Frontend side(but here handling inside node.js)
+// Server-to-server oAuth
 
 const axios = require("axios");
+const qs = require('querystring');
 
-
-async function createZoomMeetingUrl(meetingDetails) {
-    const zoomToken = process.env.MEETING_TOKEN;
-
+async function getAccessToken() {
+    const clientId = process.env.CLIENT_ID;
+    const clientSecret = process.env.CLIENT_SECRET;
+    const tokenUrl = 'https://zoom.us/oauth/token';
+  
     try {
-        const response = await axios.post('https://api.zoom.us/v2/users/me/meetings', meetingDetails, {
-            headers: {
-                'Authorization': `Bearer ${zoomToken}`,
-                'Content-Type': 'application/json',
-            },
-        });
-        console.log({check: response.data})
-        return response.data;
+      const encodedCredentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  
+      const requestData = {
+        grant_type: 'account_credentials',
+        account_id: process.env.ACCOUNT_ID,
+      };
+      const requestHeaders = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${encodedCredentials}`,
+      };
+
+      const response = await axios.post(tokenUrl, qs.stringify(requestData), { headers: requestHeaders });
+  
+      return response.data.access_token;
     } catch (error) {
-        throw new Error('Error creating Zoom meeting: ' + error.response.data.message);
+      console.error('Error getting access token:', error.response.data);
+      throw error;
     }
-}
+  }
 
+async function createZoomMeetingUrl(topic, startTime, duration) {
+    const accessToken = await getAccessToken();
+  
+    const apiUrl = `https://api.zoom.us/v2/users/me/meetings`;
+    const meetingData = {
+      topic: topic,
+      type: 2,
+      start_time: startTime,
+      duration: duration,
+    };
+  
+    try {
+      const response = await axios.post(apiUrl, meetingData, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+      return response.data.join_url
+    } catch (error) {
+      console.error('Error creating meeting:', error);
+      throw error;
+    }
+  }
 
-module.exports = { createZoomMeetingUrl };
+module.exports = { createZoomMeetingUrl }
+
 // .env configration
-ZOOM_API_KEY="vJm4W1xDTNKZQqqlFPxNrw"
-ZOOM_API_SECRET="I2Mh9Qz3hrjquW4EFqqECPSvviE3qWMG"
-MEETING_TOKEN="eyJzdiI6IjAwMDAwMSIsImFsZyI6IkhTNTEyIiwidiI6IjIuMCIsImtpZCI6IjVlZTI5NjE3LTJlNWItNDI4Yi1hOGNmLWE5MDkxNTI2N2E2YiJ9.eyJ2ZXIiOjksImF1aWQiOiJmODI4ZTEwZjQxMDhjZTc4OWVlYTk2YzM5NjIzZTBkNSIsImNvZGUiOiIzdnhYWVphbnNKS3poRlFjQ2tkUjJxUTh6TXVYMUJfcnciLCJpc3MiOiJ6bTpjaWQ6dkptNFcxeERUTktaUXFxbEZQeE5ydyIsImdubyI6MCwidHlwZSI6MCwidGlkIjowLCJhdWQiOiJodHRwczovL29hdXRoLnpvb20udXMiLCJ1aWQiOiJyVkVFMGNGRFRFdXhGU0FLMUJqUXNBIiwibmJmIjoxNzA3MTk4ODIzLCJleHAiOjE3MDcyMDI0MjMsImlhdCI6MTcwNzE5ODgyMywiYWlkIjoiX0VGSkdMbEdTb1dGRDZiRXlpRFlyZyJ9.GVtWsgujSZmlqX9oj1YNqKL8rSCpEAVK39Q-UOT4DQpbMwB5blLfD9vGdmqTuGsyQQRxOKNqVA255QEq1wLxpg"
-
+CLIENT_ID="Do0_Ej9TT9xwlDBFmg7ZA"
+CLIENT_SECRET="XGauX82I2bJOMCbgBhjHF7Wo0ycO9MlG"
+ACCOUNT_ID="_EFJGLlGSoWFD6bEyiDYrg"
